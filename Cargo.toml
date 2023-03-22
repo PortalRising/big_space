@@ -8,17 +8,17 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.9", default_features = false }
+bevy = { version = "0.10", default_features = false, features = ["bevy_render", "bevy_winit", "x11"] }
 bevy_polyline = { version = "0.4", optional = true }
 
-[dev-dependencies]
-bevy = { version = "0.9", default_features = false, features = [
-    "bevy_render",
-    "bevy_winit",
-    "x11",
-] }
-bevy_framepace = "0.11"
+# [dev-dependencies]
+# bevy = { version = "0.10", default_features = false, features = [
+#     "bevy_render",
+#     "bevy_winit",
+#     "x11",
+# ] }
+# bevy_framepace = "0.11"
 
-[features]
-default = ["debug"]
-debug = ["bevy_polyline"]
+# [features]
+# default = ["debug"]
+# debug = ["bevy_polyline"]

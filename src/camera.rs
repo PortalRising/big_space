@@ -3,7 +3,6 @@
 use std::marker::PhantomData;
 
 use bevy::{
-    ecs::schedule::ShouldRun,
     input::mouse::MouseMotion,
     math::{DQuat, DVec3},
     prelude::*,
@@ -18,23 +17,15 @@ use crate::{precision::GridPrecision, FloatingOriginSettings, GridCell};
 pub struct CameraControllerPlugin<P: GridPrecision>(PhantomData<P>);
 impl<P: GridPrecision> Plugin for CameraControllerPlugin<P> {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CameraInput>().add_system_set_to_stage(
-            CoreStage::PostUpdate,
-            SystemSet::new()
-                .with_system(
-                    default_camera_inputs
-                        .before(camera_controller::<P>)
-                        .with_run_criteria(|input: Res<CameraInput>| {
-                            if input.defaults_disabled {
-                                ShouldRun::No
-                            } else {
-                                ShouldRun::Yes
-                            }
-                        }),
-                )
-                .with_system(nearest_objects.before(camera_controller::<P>))
-                .with_system(camera_controller::<P>.before(TransformSystem::TransformPropagate)),
-        );
+        app.init_resource::<CameraInput>().add_systems((
+            default_camera_inputs
+                .before(camera_controller::<P>)
+                .run_if(|input: Res<CameraInput>| {
+                    !input.defaults_disabled
+                }),
+            nearest_objects.before(camera_controller::<P>),
+            camera_controller::<P>.before(TransformSystem::TransformPropagate),
+        ).in_base_set(CoreSet::PostUpdate));
     }
 }
 
@@ -196,7 +187,9 @@ pub fn camera_controller<P: GridPrecision>(
 ) {
     for (mut cam_transform, mut controller, mut cell) in camera.iter_mut() {
         let speed = match (controller.nearest_object, controller.slow_near_objects) {
-            (Some(nearest), true) => nearest.1,
+            (Some(nearest), true) => { 
+                (nearest.1 + 50.0).min(controller.max_speed)
+            },
             _ => controller.max_speed,
         } * (1.0 + input.boost as usize as f64);
 

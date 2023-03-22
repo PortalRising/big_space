@@ -87,14 +87,11 @@
 #![allow(clippy::type_complexity)]
 #![deny(missing_docs)]
 
-use bevy::{math::DVec3, prelude::*, transform::TransformSystem};
+use bevy::{math::DVec3, prelude::*, transform::TransformSystem, ecs::query::BatchingStrategy};
 use std::marker::PhantomData;
 
 pub mod camera;
 pub mod precision;
-
-#[cfg(feature = "debug")]
-pub mod debug;
 
 use precision::*;
 
@@ -127,38 +124,36 @@ impl<P: GridPrecision> Plugin for FloatingOriginPlugin<P> {
             .register_type::<GridCell<P>>()
             .add_plugin(ValidParentCheckPlugin::<GlobalTransform>::default())
             // add transform systems to startup so the first update is "correct"
-            .add_startup_system_to_stage(
-                StartupStage::PostStartup,
+            .add_startup_systems((
                 recenter_transform_on_grid::<P>
-                    .label(TransformSystem::TransformPropagate)
+                    .in_base_set(StartupSet::PostStartup)
+                    .in_set(TransformSystem::TransformPropagate)
                     .before(update_global_from_grid::<P>),
-            )
-            .add_startup_system_to_stage(
-                StartupStage::PostStartup,
+                    
                 update_global_from_grid::<P>
-                    .label(TransformSystem::TransformPropagate)
+                    .in_base_set(StartupSet::PostStartup)
+                    .in_set(TransformSystem::TransformPropagate)
                     .before(transform_propagate_system::<P>),
-            )
-            .add_startup_system_to_stage(
-                StartupStage::PostStartup,
-                transform_propagate_system::<P>.label(TransformSystem::TransformPropagate),
-            )
-            .add_system_to_stage(
-                CoreStage::PostUpdate,
+
+                transform_propagate_system::<P>
+                    .in_base_set(StartupSet::PostStartup)
+                    .in_set(TransformSystem::TransformPropagate),
+            ))
+            .add_systems((
                 recenter_transform_on_grid::<P>
-                    .label(TransformSystem::TransformPropagate)
+                    .in_base_set(CoreSet::PostUpdate)
+                    .in_set(TransformSystem::TransformPropagate)
                     .before(update_global_from_grid::<P>),
-            )
-            .add_system_to_stage(
-                CoreStage::PostUpdate,
+
                 update_global_from_grid::<P>
-                    .label(TransformSystem::TransformPropagate)
+                    .in_base_set(CoreSet::PostUpdate)
+                    .in_set(TransformSystem::TransformPropagate)
                     .before(transform_propagate_system::<P>),
-            )
-            .add_system_to_stage(
-                CoreStage::PostUpdate,
-                transform_propagate_system::<P>.label(TransformSystem::TransformPropagate),
-            );
+
+                transform_propagate_system::<P>
+                    .in_base_set(CoreSet::PostUpdate)
+                    .in_set(TransformSystem::TransformPropagate),
+            ));
     }
 }
 
@@ -380,7 +375,9 @@ pub fn recenter_transform_on_grid<P: GridPrecision>(
     settings: Res<FloatingOriginSettings>,
     mut query: Query<(&mut GridCell<P>, &mut Transform), (Changed<Transform>, Without<Parent>)>,
 ) {
-    query.par_for_each_mut(1024, |(mut grid_pos, mut transform)| {
+    query.par_iter_mut().batching_strategy(
+        BatchingStrategy::fixed(1024)
+    ).for_each_mut(|(mut grid_pos, mut transform)| {
         if transform.as_ref().translation.abs().max_element()
             > settings.maximum_distance_from_origin
         {
@@ -404,16 +401,26 @@ pub fn update_global_from_grid<P: GridPrecision>(
         Query<(&Transform, &mut GlobalTransform, &GridCell<P>)>,
     )>,
 ) {
-    let (origin_cell, origin_grid_pos_changed) = origin.single();
+    let origin_res = origin.get_single();
+    if origin_res.is_err() {
+        return;
+    }
+    let (origin_cell, origin_grid_pos_changed) = origin_res.unwrap();
 
     if origin_grid_pos_changed {
         let mut all_entities = entities.p1();
-        all_entities.par_for_each_mut(1024, |(local, global, entity_cell)| {
+        
+        all_entities.par_iter_mut().batching_strategy(
+            BatchingStrategy::fixed(1024)
+        ).for_each_mut(|(local, global, entity_cell)| {
             update_global_from_cell_local(&settings, entity_cell, origin_cell, local, global);
         });
     } else {
         let mut moved_cell_entities = entities.p0();
-        moved_cell_entities.par_for_each_mut(1024, |(local, global, entity_cell)| {
+
+        moved_cell_entities.par_iter_mut().batching_strategy(
+            BatchingStrategy::fixed(1024)
+        ).for_each_mut(|(local, global, entity_cell)| {
             update_global_from_cell_local(&settings, entity_cell, origin_cell, local, global);
         });
     }
